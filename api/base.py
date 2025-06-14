@@ -89,31 +89,37 @@ def verify_signature(signature: str, payload: bytes) -> bool:
 
 @app.post("/webhook/taplink")
 async def handle_taplink_webhook(request: Request):
+    logger.info("Старт 🔥")
     try:
         # Get the raw body payload
         payload = await request.body()
         
-        # Get the signature from headers
-        signature = request.headers.get("taplink-signature")
-        if not signature:
-            logger.error("Missing taplink-signature header")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing taplink-signature header"
-            )
+        # # Get the signature from headers
+        # signature = request.headers.get("taplink-signature")
+        # if not signature:
+        #     logger.error("Missing taplink-signature header")
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Missing taplink-signature header"
+        #     )
         
-        # Verify the signature
-        if not verify_signature(signature, payload):
-            logger.error("Invalid signature")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid signature"
-            )
+        # # Verify the signature
+        # if not verify_signature(signature, payload):
+        #     logger.error("Invalid signature")
+        #     raise HTTPException(
+        #         status_code=status.HTTP_401_UNAUTHORIZED,
+        #         detail="Invalid signature"
+        #     )
         
         # Parse the JSON payload
         try:
+            logger.info("Получили смс-ку")
             webhook_data = await request.json()
+            logger.info("webhook_data")
+            logger.info(webhook_data)
             payload_model = WebhookPayload(**webhook_data)
+            logger.info("payload_model")
+            logger.info(payload_model)
         except Exception as e:
             logger.error(f"Error parsing JSON: {str(e)}")
             raise HTTPException(
