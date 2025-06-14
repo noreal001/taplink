@@ -1,0 +1,10 @@
+python-dotenv==0.21.1
+fastapi
+uvicorn
+pydantic
+gunicorn
+python-multipart
+starlette
+httpx
+uuid
+pandas
