@@ -1,0 +1,328 @@
+Вот доработанный код с исправлениями:
+
+```python
+from datetime import datetime, timedelta
+import requests
+from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
+
+# 1. Исправление даты доставки (может быть сегодня)
+delivery_date = datetime.now().strftime('%Y-%m-%d')  # Сегодняшняя дата
+
+# 2. Функция для поиска ближайшего ПВЗ
+def find_nearest_delivery_point(destination_address: str) -> str:
+    """Находит ближайший пункт выдачи СДЭК к указанному адресу"""
+    try:
+        # Геокодирование адреса получателя
+        geolocator = Nominatim(user_agent="cdek_delivery")
+        location = geolocator.geocode(destination_address)
+        if not location:
+            return "DEFAULT_PVZ"  # Вернуть пункт по умолчанию
+        
+        dest_coords = (location.latitude, location.longitude)
+        
+        # Список ПВЗ с их координатами (замените на реальные данные)
+        pvz_list = [
+            {"code": "PVZ1", "coords": (55.752023, 37.617499)},  # Москва, центр
+            {"code": "PVZ2", "coords": (55.733842, 37.588058)},  # Москва, юг
+            {"code": "PVZ3", "coords": (55.774990, 37.632569)}   # Москва, север
+        ]
+        
+        # Находим ближайший ПВЗ
+        nearest_pvz = min(
+            pvz_list,
+            key=lambda x: geodesic(dest_coords, x["coords"]).km
+        )
+        
+        return nearest_pvz["code"]
+    except Exception as e:
+        logger.error(f"Ошибка поиска ПВЗ: {str(e)}")
+        return "DEFAULT_PVZ"  # Пункт по умолчанию при ошибке
+
+def create_cdek_order(customer_data: Dict[str, str], order_number: str) -> Dict[str, Any]:
+    """Создание заказа в СДЭК с автоматическим выбором ПВЗ"""
+    try:
+        token = get_cdek_auth_token()
+        
+        # Автоматический выбор ближайшего ПВЗ
+        delivery_point = find_nearest_delivery_point(customer_data['Адрес доставки'])
+        
+        order_data = {
+            "type": 1,
+            "number": order_number,
+            "tariff_code": 136,
+            "delivery_point": delivery_point,
+            "sender": {
+                "company": "Моя компания",
+                "name": "Иванов Иван",
+                "email": "order@mycompany.com",
+                "phones": [{"number": "+79161234567"}]
+            },
+            "recipient": {
+                "name": customer_data['ФИО'],
+                "phones": [{"number": customer_data['Телефон']}]
+            },
+            "from_location": {
+                "code": "MSK1",
+                "address": "г. Москва, ул. Промышленная, д. 1"
+            },
+            "to_location": {
+                "address": customer_data['Адрес доставки']
+            },
+            "packages": [{
+                "number": f"{order_number}-1",
+                "weight": 100,
+                "length": 10,
+                "width": 10,
+                "height": 10,
+                "items": [{
+                    "name": "Товар",
+                    "ware_key": "SKU123",
+                    "payment": {"value": 0},
+                    "weight": 100,
+                    "amount": 1
+                }]
+            }],
+            "delivery_recipient_cost": {"value": 0},
+            "shipment_point": "MSK1",
+            "delivery_date": delivery_date  # Используем текущую дату
+        }
+        
+        response = requests.post(
+            CDEK_API_URL,
+            json=order_data,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            }
+        )
+        
+        if response.status_code != 200:
+            error_msg = f"СДЭК API ошибка: {response.status_code} - {response.text}"
+            logger.error(error_msg)
+            return {"error": error_msg}
+        
+        return response.json()
+    except Exception as e:
+        logger.error(f"Ошибка создания заказа: {str(e)}", exc_info=True)
+        return {"error": str(e)}
+```
+
+### Ключевые изменения:
+
+1. **Дата доставки**:
+   - Теперь используется текущая дата: `datetime.now().strftime('%Y-%m-%d')`
+   - СДЭК допускает отправку в тот же день, если время позволяет
+
+2. **Автоматический выбор ПВЗ**:
+   - Добавлена функция `find_nearest_delivery_point()`
+   - Использует геокодирование для определения координат адреса
+   - Сравнивает расстояние до всех доступных ПВЗ
+   - Возвращает код ближайшего пункта выдачи
+
+3. **Дополнительные улучшения**:
+   - Добавлен резервный вариант ("DEFAULT_PVZ") при ошибках геокодирования
+   - Улучшено логирование ошибок
+
+### Что нужно настроить:
+
+1. Замените `pvz_list` на реальные данные ваших ПВЗ СДЭК (коды и координаты)
+2. Обновите `from_location` и `shipment_point` на ваши реальные данные
+3. Установите необходимые пакеты:
+   ```bash
+   pip install geopy
+   ```
+
+Для работы в продакшене рекомендуется:
+1. Кэшировать результаты геокодирования
+2. Добавить обработку временных ошибок API
+3. Реализовать периодическое обновление списка ПВЗ
+
+Если у вас есть доступ к API СДЭК для получения списка ПВЗ, можно модифицировать функцию для автоматического получения актуального списка пунктов выдачи.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Отлично! Вот модифицированная версия функции `find_nearest_delivery_point`, которая автоматически получает актуальный список ПВЗ через API СДЭК и находит ближайший к адресу доставки:
+
+```python
+import requests
+from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
+from typing import List, Dict, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+def get_cdek_pvz_list(token: str, city_name: Optional[str] = None) -> List[Dict]:
+    """Получает список ПВЗ СДЭК через API"""
+    try:
+        url = "https://api.cdek.ru/v2/deliverypoints"
+        params = {
+            'type': 'PVZ',
+            'is_handout': 'true',
+            'is_reception': 'true',
+            'size': '1000'  # Максимальное количество пунктов
+        }
+        
+        if city_name:
+            params['city'] = city_name
+            
+        response = requests.get(
+            url,
+            headers={'Authorization': f'Bearer {token}'},
+            params=params
+        )
+        response.raise_for_status()
+        
+        return response.json() or []
+    except Exception as e:
+        logger.error(f"Ошибка получения списка ПВЗ: {str(e)}")
+        return []
+
+def geocode_address(address: str) -> Optional[tuple]:
+    """Геокодирует адрес в координаты (широта, долгота)"""
+    try:
+        geolocator = Nominatim(user_agent="cdek_delivery")
+        location = geolocator.geocode(address)
+        return (location.latitude, location.longitude) if location else None
+    except Exception as e:
+        logger.error(f"Ошибка геокодирования адреса: {str(e)}")
+        return None
+
+def find_nearest_delivery_point(token: str, destination_address: str) -> str:
+    """Находит ближайший ПВЗ к указанному адресу"""
+    try:
+        # 1. Геокодируем адрес доставки
+        dest_coords = geocode_address(destination_address)
+        if not dest_coords:
+            logger.warning("Не удалось определить координаты адреса")
+            return "DEFAULT_PVZ"
+        
+        # 2. Пытаемся определить город для фильтрации ПВЗ
+        geolocator = Nominatim(user_agent="cdek_delivery")
+        location = geolocator.geocode(destination_address, exactly_one=True, addressdetails=True)
+        city = location.raw.get('address', {}).get('city') if location else None
+        
+        # 3. Получаем список ПВЗ (с фильтром по городу если определили)
+        pvz_list = get_cdek_pvz_list(token, city_name=city)
+        if not pvz_list:
+            logger.warning("Не удалось получить список ПВЗ")
+            return "DEFAULT_PVZ"
+        
+        # 4. Фильтруем только работающие ПВЗ с координатами
+        valid_pvz = []
+        for pvz in pvz_list:
+            try:
+                if (pvz.get('location') and 
+                    pvz['location'].get('latitude') is not None and 
+                    pvz['location'].get('longitude') is not None and
+                    pvz.get('status') == 'WORKING'):
+                    valid_pvz.append({
+                        'code': pvz['code'],
+                        'name': pvz.get('name', ''),
+                        'address': pvz.get('location', {}).get('address', ''),
+                        'coords': (float(pvz['location']['latitude']), 
+                                  float(pvz['location']['longitude']))
+                    })
+            except (KeyError, ValueError) as e:
+                continue
+        
+        if not valid_pvz:
+            logger.warning("Нет доступных ПВЗ с координатами")
+            return "DEFAULT_PVZ"
+        
+        # 5. Находим ближайший ПВЗ
+        nearest = min(
+            valid_pvz,
+            key=lambda x: geodesic(dest_coords, x['coords']).km
+        )
+        
+        logger.info(f"Выбран ПВЗ: {nearest['name']} ({nearest['address']})")
+        return nearest['code']
+        
+    except Exception as e:
+        logger.error(f"Ошибка поиска ближайшего ПВЗ: {str(e)}")
+        return "DEFAULT_PVZ"
+
+def create_cdek_order(customer_data: Dict[str, str], order_number: str) -> Dict[str, Any]:
+    """Создание заказа в СДЭК с автоматическим выбором ПВЗ"""
+    try:
+        token = get_cdek_auth_token()
+        
+        # Получаем ближайший ПВЗ
+        delivery_point = find_nearest_delivery_point(token, customer_data['Адрес доставки'])
+        
+        order_data = {
+            # ... остальные параметры заказа ...
+            "delivery_point": delivery_point,
+            # ... остальные параметры заказа ...
+        }
+        
+        # ... отправка запроса ...
+    except Exception as e:
+        logger.error(f"Ошибка создания заказа: {str(e)}")
+        return {"error": str(e)}
+```
+
+### Ключевые улучшения:
+
+1. **Автоматическое получение ПВЗ**:
+   - Использует API СДЭК `v2/deliverypoints`
+   - Поддерживает фильтрацию по городу
+   - Получает до 1000 пунктов (максимум)
+
+2. **Умный выбор ПВЗ**:
+   - Фильтрует только работающие пункты (`status=WORKING`)
+   - Проверяет наличие координат
+   - Логирует выбранный пункт для отслеживания
+
+3. **Оптимизация геокодирования**:
+   - Определяет город для предварительной фильтрации
+   - Обрабатывает ошибки геокодирования
+
+4. **Отказоустойчивость**:
+   - Возвращает пункт по умолчанию при ошибках
+   - Подробное логирование всех этапов
+
+### Как использовать:
+
+1. Убедитесь, что у вас есть:
+   - Активный аккаунт в API СДЭК
+   - Правильные `client_id` и `client_secret`
+   - Установленные пакеты: `requests`, `geopy`
+
+2. Настройте параметры:
+   - `DEFAULT_PVZ` - код резервного пункта выдачи
+   - Логику обработки ошибок под ваши нужды
+
+3. Для тестирования:
+   ```python
+   token = get_cdek_auth_token()
+   test_address = "г. Москва, ул. Тверская, д. 1"
+   pvz_code = find_nearest_delivery_point(token, test_address)
+   print(f"Ближайший ПВЗ: {pvz_code}")
+   ```
+
+Это решение автоматически будет выбирать оптимальный пункт выдачи, учитывая актуальную информацию из системы СДЭК.
+
+
+
+
+
+
+
+
+
+
+
+  
