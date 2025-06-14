@@ -1,5 +1,4 @@
-from fastapi.responses import JSONResponse 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # Используем AsyncIOScheduler
+from fastapi.responses import JSONResponse
 from config import PORT
 import uvicorn
 from api.base import *
