@@ -1,19 +1,15 @@
-import os
-import pandas as pd
-from fastapi import HTTPException, Request, status
+
+from fastapi import HTTPException
 from dotenv import load_dotenv
 from functools import wraps
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException
 import httpx
 import logging
-from yookassa import Configuration
-import logging
 load_dotenv()
 
 # Настроим логирование
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger('aiosqlite').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 def exception_handler(func):

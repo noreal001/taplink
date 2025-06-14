@@ -5,13 +5,6 @@ import uvicorn
 from api.base import *
 from utils import *
 
-# Логируем, чтобы проверить, что переменные установлены
-logger.info("Account ID: %s", Configuration.account_id)
-logger.info("Secret Key: %s", "SET" if Configuration.secret_key else "NOT SET")
-
-# Инициализация планировщика задач
-scheduler = AsyncIOScheduler()
-
 @app.api_route("/", methods=["GET", "HEAD"])
 async def super(request: Request):
     return JSONResponse(content={"message": "Супер"}, status_code=200, headers={"Content-Type": "application/json; charset=utf-8"})
